@@ -53,6 +53,9 @@ jobs:
         if [ "${{ runner.os }}" == "Windows" ]; then
           uv run pyinstaller --noconfirm --onefile --windowed --name "WordImageTool_Windows" "main.py"
         elif [ "${{ runner.os }}" == "macOS" ]; then
+          # Set the deployment target to ensure compatibility with older macOS versions.
+          # This makes the app compatible with macOS 11.0 (Big Sur) and newer.
+          export MACOSX_DEPLOYMENT_TARGET=11.0
           uv run pyinstaller --noconfirm --onefile --windowed --name "WordImageTool_macOS" "main.py"
         fi
 
