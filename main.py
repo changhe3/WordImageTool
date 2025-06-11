@@ -17,7 +17,7 @@ except ImportError:
     pass
 
 
-# --- Core Logic (核心处理逻辑已重写，实现双重约束按比例缩放) ---
+# --- Core Logic (核心处理逻辑已更新，以支持自定义输出路径) ---
 
 def process_paragraph(para, log_callback, available_width=None, available_height=None):
     """
@@ -73,25 +73,20 @@ def process_paragraph(para, log_callback, available_width=None, available_height
                 img_aspect = float(img_width) / float(img_height)
                 log_callback(f"      -> 图片原始尺寸: {img_width}x{img_height}, 宽高比: {img_aspect:.2f}")
 
-                # --- 最终版：双重约束尺寸计算逻辑 ---
                 if available_width and available_width > 0 and available_height and available_height > 0:
-                    # 在表格中，同时考虑宽度和高度
-                    cell_width = int(available_width * 0.95)  # 留出边距
+                    cell_width = int(available_width * 0.95)
                     cell_height = int(available_height * 0.95)
                     cell_aspect = float(cell_width) / float(cell_height)
 
                     if img_aspect > cell_aspect:
-                        # 图片比单元格更“宽”，以宽度为基准缩放
                         target_width = cell_width
                         target_height = int(target_width / img_aspect)
                         log_callback("      -> 图片较宽，以单元格宽度为基准缩放。")
                     else:
-                        # 图片比单元格更“高”，以高度为基准缩放
                         target_height = cell_height
                         target_width = int(target_height * img_aspect)
                         log_callback("      -> 图片较高，以单元格高度为基准缩放。")
                 else:
-                    # 在普通段落或无法获取尺寸的表格中，使用默认宽度
                     target_width = Inches(2.0)
                     target_height = int(target_width / img_aspect)
                     log_callback("      -> 应用默认宽度。")
@@ -100,7 +95,6 @@ def process_paragraph(para, log_callback, available_width=None, available_height
 
                 image_stream.seek(0)
                 run = para.add_run()
-                # 使用Emu单位插入，更加精确
                 run.add_picture(image_stream, width=Emu(target_width), height=Emu(target_height))
 
             except requests.exceptions.RequestException as e:
@@ -113,9 +107,9 @@ def process_paragraph(para, log_callback, available_width=None, available_height
     return True
 
 
-def find_and_replace_images_in_doc(doc_path, log_callback):
+def find_and_replace_images_in_doc(doc_path, output_dir, log_callback):
     """
-    打开 .docx 文件，替换正文和表格中的图片链接。
+    打开 .docx 文件，替换图片链接，并保存到指定的输出文件夹。
     """
     try:
         doc = Document(doc_path)
@@ -131,13 +125,10 @@ def find_and_replace_images_in_doc(doc_path, log_callback):
             for i, table in enumerate(doc.tables):
                 log_callback(f"  -> 正在处理表格 {i + 1}...")
                 for row in table.rows:
-                    # 获取行高 (如果有)
                     row_height_emu = row.height if row.height else 0
                     for cell in row.cells:
-                        # 获取单元格宽度
                         cell_width_emu = cell.width if cell.width else 0
                         for para in cell.paragraphs:
-                            # 将单元格宽度和行高都传递给处理函数
                             if process_paragraph(para, log_callback,
                                                  available_width=cell_width_emu,
                                                  available_height=row_height_emu):
@@ -149,9 +140,14 @@ def find_and_replace_images_in_doc(doc_path, log_callback):
             log_callback("  -> 未在文档中找到符合格式的图片链接或未做出任何更改。")
             return "no_images_found"
 
-        base, ext = os.path.splitext(doc_path)
-        new_doc_path = f"{base}_processed.docx"
-        log_callback(f"  -> 处理完成，正在保存到新文件: {os.path.basename(new_doc_path)}")
+        # 使用原始文件名保存到指定的输出目录
+        original_filename = os.path.basename(doc_path)
+        new_doc_path = os.path.join(output_dir, original_filename)
+
+        # 确保输出目录存在
+        os.makedirs(output_dir, exist_ok=True)
+
+        log_callback(f"  -> 处理完成，正在保存到: {new_doc_path}")
         doc.save(new_doc_path)
         return new_doc_path
 
@@ -162,14 +158,15 @@ def find_and_replace_images_in_doc(doc_path, log_callback):
         return None
 
 
-# --- Tkinter GUI Application (界面部分无需改动) ---
+# --- Tkinter GUI Application (界面已更新) ---
 
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Word 图片链接批量替换工具 (最终优化版)")
-        self.root.geometry("800x650")
+        self.root.title("Word 图片链接批量替换工具 (自定义输出)")
+        self.root.geometry("800x700")  # 增加窗口高度以容纳新控件
         self.file_paths = []
+        self.output_dir = None
 
         self.root.configure(bg="#f0f0f0")
         font_main = ("Arial", 12)
@@ -178,6 +175,7 @@ class App:
         main_frame = tk.Frame(root, padx=20, pady=20, bg="#f0f0f0")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        # --- 步骤 1: 文件选择 ---
         select_frame = tk.Frame(main_frame, bg="#f0f0f0")
         select_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -186,11 +184,11 @@ class App:
         self.select_button.pack(side=tk.LEFT, ipadx=10)
 
         self.clear_button = tk.Button(select_frame, text="清空列表", command=self.clear_list, font=font_main,
-                                      bg="#dc3545", fg="white", relief=tk.FLAT, padx=10, pady=5)
+                                      bg="#6c757d", fg="white", relief=tk.FLAT, padx=10, pady=5)
         self.clear_button.pack(side=tk.LEFT, padx=(10, 0))
 
         list_frame = tk.LabelFrame(main_frame, text="待处理文件列表", font=font_main, padx=10, pady=10, bg="#f0f0f0")
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
         self.file_listbox = Listbox(list_frame, font=("Arial", 11), relief=tk.SOLID, bd=1)
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -199,11 +197,25 @@ class App:
         scrollbar.pack(side=tk.RIGHT, fill="y")
         self.file_listbox.config(yscrollcommand=scrollbar.set)
 
-        self.process_button = tk.Button(main_frame, text="2. 开始批量处理", command=self.start_processing_thread,
+        # --- 步骤 2: 设置输出文件夹 ---
+        output_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        output_frame.pack(fill=tk.X, pady=(10, 10))
+
+        self.output_dir_button = tk.Button(output_frame, text="2. 设置输出文件夹", command=self.select_output_dir,
+                                           font=font_main, bg="#0078d4", fg="white", relief=tk.FLAT, padx=10, pady=5)
+        self.output_dir_button.pack(side=tk.LEFT, ipadx=10)
+
+        self.output_dir_label = tk.Label(output_frame, text="尚未设置输出文件夹", font=font_main, bg="#e1e1e1",
+                                         fg="#333", relief=tk.SUNKEN, anchor='w', padx=10)
+        self.output_dir_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+
+        # --- 步骤 3: 开始处理 ---
+        self.process_button = tk.Button(main_frame, text="3. 开始批量处理", command=self.start_processing_thread,
                                         font=font_main, bg="#28a745", fg="white", state=tk.DISABLED, relief=tk.FLAT,
                                         padx=10, pady=5)
         self.process_button.pack(fill=tk.X, pady=10, ipady=5)
 
+        # --- 日志输出 ---
         log_frame = tk.LabelFrame(main_frame, text="处理日志", font=font_main, padx=10, pady=10, bg="#f0f0f0")
         log_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -220,6 +232,13 @@ class App:
 
         self.root.after(0, _log)
 
+    def _update_process_button_state(self):
+        """根据输入和输出是否都已设置来更新处理按钮的状态"""
+        if self.file_paths and self.output_dir:
+            self.process_button.config(state=tk.NORMAL)
+        else:
+            self.process_button.config(state=tk.DISABLED)
+
     def select_files(self):
         paths = filedialog.askopenfilenames(
             title="请选择一个或多个Word文档",
@@ -231,30 +250,37 @@ class App:
                     self.file_paths.append(p)
             self.update_file_listbox()
             self.log(f"添加了 {len(paths)} 个文件到处理列表。当前共 {len(self.file_paths)} 个。")
+        self._update_process_button_state()
+
+    def select_output_dir(self):
+        """选择输出目录"""
+        path = filedialog.askdirectory(title="请选择一个文件夹用于存放处理后的文件")
+        if path:
+            self.output_dir = path
+            self.output_dir_label.config(text=path)
+            self.log(f"已设置输出文件夹: {path}")
+        self._update_process_button_state()
 
     def update_file_listbox(self):
         self.file_listbox.delete(0, END)
         for path in self.file_paths:
             self.file_listbox.insert(END, os.path.basename(path))
 
-        if self.file_paths:
-            self.process_button.config(state=tk.NORMAL)
-        else:
-            self.process_button.config(state=tk.DISABLED)
-
     def clear_list(self):
         self.file_paths = []
         self.update_file_listbox()
         self.log("文件列表已清空。")
+        self._update_process_button_state()
 
     def start_processing_thread(self):
-        if not self.file_paths:
-            messagebox.showerror("错误", "请先选择至少一个Word文档！")
+        if not self.file_paths or not self.output_dir:
+            messagebox.showerror("错误", "请先选择待处理的Word文档并设置输出文件夹！")
             return
 
         self.process_button.config(state=tk.DISABLED, text="正在处理中...")
         self.select_button.config(state=tk.DISABLED)
         self.clear_button.config(state=tk.DISABLED)
+        self.output_dir_button.config(state=tk.DISABLED)
 
         thread = threading.Thread(target=self.process_worker, daemon=True)
         thread.start()
@@ -269,7 +295,8 @@ class App:
             self.log("=" * 60)
             self.log(f"开始处理文件 {i + 1}/{total_files}: {os.path.basename(doc_path)}")
 
-            new_file_path = find_and_replace_images_in_doc(doc_path, self.log)
+            # 传递输出目录到核心函数
+            new_file_path = find_and_replace_images_in_doc(doc_path, self.output_dir, self.log)
 
             if new_file_path and new_file_path != "no_images_found":
                 success_count += 1
@@ -284,9 +311,11 @@ class App:
 
         def _reset_ui():
             self.clear_list()
-            self.process_button.config(state=tk.DISABLED, text="2. 开始批量处理")
+            self.process_button.config(text="3. 开始批量处理")
             self.select_button.config(state=tk.NORMAL)
             self.clear_button.config(state=tk.NORMAL)
+            self.output_dir_button.config(state=tk.NORMAL)
+            self._update_process_button_state()
 
         self.root.after(0, _reset_ui)
 
