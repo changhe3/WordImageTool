@@ -2,10 +2,13 @@
 name: Build Cross-Platform Executables
 
 # Controls when the workflow will run.
-# This workflow runs on pushes to the "main" branch.
 on:
+  # Triggers the workflow on push events but only for the "main" branch
   push:
     branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch: {}
 
 jobs:
   # The "build" job is responsible for creating the executables.
@@ -37,13 +40,15 @@ jobs:
     # Step 4: Install Python packages using uv from your pyproject.toml file.
     # Also install pyinstaller separately.
     - name: Install dependencies with uv
+      shell: bash
       run: |
         uv sync
         uv pip install pyinstaller
 
     # Step 5: Run PyInstaller to build the executable.
-    # The command is slightly different for each OS.
+    # The `uv run` command executes pyinstaller inside the managed environment.
     - name: Build with PyInstaller
+      shell: bash
       run: |
         if [ "${{ runner.os }}" == "Windows" ]; then
           uv run pyinstaller --noconfirm --onefile --windowed --name "WordImageTool_Windows" "main.py"
