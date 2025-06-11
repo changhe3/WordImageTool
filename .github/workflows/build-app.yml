@@ -3,68 +3,65 @@ name: Build Cross-Platform Executables
 
 # Controls when the workflow will run.
 on:
-  # Triggers the workflow on push events but only for the "main" branch
   push:
     branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch: {}
 
 jobs:
-  # The "build" job is responsible for creating the executables.
   build:
-    # This job will run on both Windows and macOS virtual machines.
-    runs-on: ${{ matrix.os }}
+    # We now define the full build matrix here, including architecture.
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            arch: x64
+            name: WordImageTool_Windows
+          - os: macos-14 # Use macos-14 for the ARM64 (Apple Silicon) build
+            arch: arm64
+            name: WordImageTool_macOS_arm64
+          - os: macos-12 # Use macos-12 for the x86_64 (Intel) build
+            arch: x86_64
+            name: WordImageTool_macOS_x86_64
+
+    # Run each job on the specified OS.
+    runs-on: ${{ matrix.os }}
 
     steps:
-    # Step 1: Check out your repository code so the workflow can access it.
     - name: Check out repository
       uses: actions/checkout@v4
 
-    # Step 2: Install uv, the fast Python package installer.
     - name: Install uv
       uses: astral-sh/setup-uv@v5
-      with:
-        # Install a specific version of uv.
-        version: "0.7.12"
 
-    # Step 3: Install python
-    - name: "Set up Python"
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version-file: "pyproject.toml"
 
-    # Step 4: Install Python packages using uv from your pyproject.toml file.
-    # Also install pyinstaller separately.
     - name: Install dependencies with uv
-      shell: bash
       run: |
         uv sync
         uv pip install pyinstaller
+      shell: bash
 
     # Step 5: Run PyInstaller to build the executable.
-    # The `uv run` command executes pyinstaller inside the managed environment.
+    # No longer needs the universal2 flag. It will build for the runner's native architecture.
     - name: Build with PyInstaller
       shell: bash
       run: |
         if [ "${{ runner.os }}" == "Windows" ]; then
-          uv run pyinstaller --noconfirm --onefile --windowed --name "WordImageTool_Windows" "main.py"
+          uv run pyinstaller --noconfirm --onefile --windowed --name "${{ matrix.name }}" "main.py"
         elif [ "${{ runner.os }}" == "macOS" ]; then
-          # Set the deployment target to ensure compatibility with older macOS versions.
-          # This makes the app compatible with macOS 11.0 (Big Sur) and newer.
           export MACOSX_DEPLOYMENT_TARGET=11.0
-          uv run pyinstaller --noconfirm --onedir --windowed --target-arch universal2 --name "WordImageTool_macOS" "main.py"
+          uv run pyinstaller --noconfirm --onedir --windowed --name "${{ matrix.name }}" "main.py"
         fi
 
-    # Step 6: Upload the built executable as an artifact.
-    # This allows you to download the final .exe and .app files from the GitHub Actions run page.
+    # Step 6: Upload the built executable as a separate artifact for each build.
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ runner.os }}-Build
+        name: ${{ matrix.name }}
         path: |
-          dist/WordImageTool_Windows.exe
-          dist/WordImageTool_macOS.app
+          dist/${{ matrix.name }}.exe
+          dist/${{ matrix.name }}.app
+        if-no-files-found: ignore # Prevents errors if one path doesn't exist
