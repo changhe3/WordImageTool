@@ -19,7 +19,7 @@ jobs:
           - os: macos-14 # Use macos-14 for the ARM64 (Apple Silicon) build
             arch: arm64
             name: WordImageTool_macOS_arm64
-          - os: macos-12 # Use macos-12 for the x86_64 (Intel) build
+          - os: macos-13 # Use macos-13 for the x86_64 (Intel) build
             arch: x86_64
             name: WordImageTool_macOS_x86_64
 
